@@ -179,9 +179,67 @@
           <button class="btn secondary kanban-nudge-dispatch-btn" onclick="nudgeKanbanDispatcher()" data-i18n="kanban_nudge_dispatcher" title="Dry-run: shows what would be claimed without spawning workers">Preview</button>
           <button class="btn primary kanban-run-dispatch-btn" onclick="runKanbanDispatcher()" data-i18n="kanban_run_dispatcher" title="Claims Ready tasks and spawns worker subprocesses">Run dispatcher</button>
         </div>
-        <div class="kanban-new-task-row">
-          <input id="kanbanNewTaskTitle" placeholder="New task" data-i18n-placeholder="kanban_new_task" onkeydown="if(event.key==='Enter')createKanbanTask()">
-          <button class="btn secondary" onclick="createKanbanTask()" data-i18n="kanban_new_task">New task</button>
+        <div class="kanban-new-task-row detail-form kanban-new-task-form">
+          <div class="detail-form-row">
+            <label for="kanbanNewTaskTitle">Title</label>
+            <input id="kanbanNewTaskTitle" placeholder="New task" data-i18n-placeholder="kanban_new_task" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();createKanbanTask()}">
+          </div>
+          <div class="detail-form-row">
+            <label for="kanbanNewTaskBody">Description</label>
+            <textarea id="kanbanNewTaskBody" rows="3" placeholder="Description"></textarea>
+          </div>
+          <div class="kanban-new-task-grid">
+            <div class="detail-form-row">
+              <label for="kanbanNewTaskAssignee">Assignee</label>
+              <input id="kanbanNewTaskAssignee" placeholder="developer">
+            </div>
+            <div class="detail-form-row">
+              <label for="kanbanNewTaskPriority">Priority</label>
+              <input id="kanbanNewTaskPriority" type="number" min="0" step="1" placeholder="0">
+            </div>
+            <div class="detail-form-row">
+              <label for="kanbanNewTaskTenant">Tenant</label>
+              <input id="kanbanNewTaskTenant" placeholder="ops">
+            </div>
+            <div class="detail-form-row">
+              <label for="kanbanNewTaskStatus">Status</label>
+              <select id="kanbanNewTaskStatus">
+                <option value="">Ready</option>
+                <option value="triage">Triage</option>
+                <option value="todo">To do</option>
+                <option value="ready">Ready</option>
+              </select>
+            </div>
+          </div>
+          <details class="kanban-advanced-fields">
+            <summary>Advanced fields</summary>
+            <div class="kanban-new-task-grid">
+              <div class="detail-form-row">
+                <label for="kanbanNewTaskParents">Parent task IDs</label>
+                <input id="kanbanNewTaskParents" placeholder="t_123, t_456">
+              </div>
+              <div class="detail-form-row">
+                <label for="kanbanNewTaskWorkspacePath">Workspace path</label>
+                <input id="kanbanNewTaskWorkspacePath" placeholder="/workspace/project">
+              </div>
+              <div class="detail-form-row">
+                <label for="kanbanNewTaskWorkspaceKind">Workspace kind</label>
+                <input id="kanbanNewTaskWorkspaceKind" value="scratch" placeholder="scratch">
+              </div>
+              <div class="detail-form-row">
+                <label for="kanbanNewTaskMaxRuntime">Max runtime (seconds)</label>
+                <input id="kanbanNewTaskMaxRuntime" type="number" min="1" step="1" placeholder="3600">
+              </div>
+            </div>
+            <div class="detail-form-row">
+              <label for="kanbanNewTaskSkills">Skills</label>
+              <input id="kanbanNewTaskSkills" placeholder="github-code-review, systematic-debugging">
+            </div>
+          </details>
+          <div class="kanban-new-task-actions">
+            <button class="btn secondary" onclick="resetKanbanCreateTaskForm()">Clear</button>
+            <button class="btn primary" onclick="createKanbanTask()" data-i18n="kanban_new_task">New task</button>
+          </div>
         </div>
       </div>
       <div class="kanban-summary" id="kanbanSummary"></div>

@@ -1254,9 +1254,10 @@ function _kanbanCardStalenessClass(task){
 function _kanbanCardQuickActions(task){
   const id = esc(task.id || '');
   const status = task.status || '';
+  const nudge = ['triage', 'todo', 'ready'].includes(status) ? `<button type="button" class="kanban-card-action" onclick="event.stopPropagation();nudgeKanbanDispatcher()">${esc(t('kanban_nudge_dispatcher'))}</button>` : '';
   const complete = status !== 'done' && status !== 'archived' ? `<button type="button" class="kanban-card-action" onclick="quickKanbanCardAction(event,'${id}','done')">${esc(t('kanban_card_complete'))}</button>` : '';
   const archive = status !== 'archived' ? `<button type="button" class="kanban-card-action danger" onclick="quickKanbanCardAction(event,'${id}','archived')">${esc(t('kanban_card_archive'))}</button>` : '';
-  return `<div class="kanban-card-actions" onclick="event.stopPropagation()">${complete}${archive}</div>`;
+  return `<div class="kanban-card-actions" onclick="event.stopPropagation()">${nudge}${complete}${archive}</div>`;
 }
 
 async function quickKanbanCardAction(event, taskId, status){
@@ -1592,10 +1593,11 @@ async function nudgeKanbanDispatcher(){
   _setKanbanDispatcherButtonsDisabled(true);
   try {
     const dispatchEndpoint = '/api/kanban/dispatch';
-    const result = await api(
-      dispatchEndpoint + '?dry_run=1&max=8' + (_kanbanCurrentBoard ? '&board=' + encodeURIComponent(_kanbanCurrentBoard) : ''),
-      {method: 'POST'},
-    );
+    const params = new URLSearchParams();
+    params.set('dry_run', '1');
+    params.set('max', '8');
+    if (_kanbanCurrentBoard) params.set('board', _kanbanCurrentBoard);
+    const result = await api(dispatchEndpoint + '?' + params.toString(), {method: 'POST'});
     showToast(_kanbanFormatDispatchResult(result, true), 'info', 6000);
     await loadKanban(true);
   } catch(e) {
@@ -1796,20 +1798,207 @@ function _kanbanRunHtml(run){
 }
 
 function _kanbanLinksHtml(links){
+  return _kanbanLinksEditorHtml({}, links);
+}
+
+function _kanbanCsvValues(value){
+  return String(value || '')
+    .split(/[\n,]/)
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function _kanbanFormTrimmedValue(id){
+  const el = document.getElementById(id);
+  return el ? String(el.value || '').trim() : '';
+}
+
+function _kanbanFormIntegerValue(id, label){
+  const raw = _kanbanFormTrimmedValue(id);
+  if (!raw) return null;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) throw new Error(`${label} must be an integer`);
+  return value;
+}
+
+function _kanbanCreateTaskPayload(){
+  const title = _kanbanFormTrimmedValue('kanbanNewTaskTitle');
+  if (!title) return null;
+  const priority = _kanbanFormIntegerValue('kanbanNewTaskPriority', 'Priority');
+  const maxRuntime = _kanbanFormIntegerValue('kanbanNewTaskMaxRuntime', 'Max runtime');
+  const payload = {
+    title,
+    body: _kanbanFormTrimmedValue('kanbanNewTaskBody') || undefined,
+    assignee: _kanbanFormTrimmedValue('kanbanNewTaskAssignee') || undefined,
+    tenant: _kanbanFormTrimmedValue('kanbanNewTaskTenant') || undefined,
+    priority: priority ?? 0,
+    status: _kanbanFormTrimmedValue('kanbanNewTaskStatus') || undefined,
+    parents: _kanbanCsvValues(_kanbanFormTrimmedValue('kanbanNewTaskParents')),
+    workspace_kind: _kanbanFormTrimmedValue('kanbanNewTaskWorkspaceKind') || undefined,
+    workspace_path: _kanbanFormTrimmedValue('kanbanNewTaskWorkspacePath') || undefined,
+    max_runtime_seconds: maxRuntime ?? undefined,
+    skills: _kanbanCsvValues(_kanbanFormTrimmedValue('kanbanNewTaskSkills')),
+  };
+  if (!payload.parents.length) delete payload.parents;
+  if (!payload.skills.length) delete payload.skills;
+  if (!payload.workspace_kind && !payload.workspace_path) delete payload.workspace_kind;
+  return payload;
+}
+
+function resetKanbanCreateTaskForm(){
+  [
+    'kanbanNewTaskTitle',
+    'kanbanNewTaskBody',
+    'kanbanNewTaskAssignee',
+    'kanbanNewTaskPriority',
+    'kanbanNewTaskTenant',
+    'kanbanNewTaskStatus',
+    'kanbanNewTaskParents',
+    'kanbanNewTaskWorkspacePath',
+    'kanbanNewTaskWorkspaceKind',
+    'kanbanNewTaskMaxRuntime',
+    'kanbanNewTaskSkills',
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = '';
+  });
+  const kind = document.getElementById('kanbanNewTaskWorkspaceKind');
+  if (kind) kind.value = 'scratch';
+  const title = document.getElementById('kanbanNewTaskTitle');
+  if (title) title.focus();
+}
+
+function _kanbanTaskEditPayload(){
+  const title = _kanbanFormTrimmedValue('kanbanTaskEditTitle');
+  if (!title) throw new Error('Title is required');
+  const priority = _kanbanFormIntegerValue('kanbanTaskEditPriority', 'Priority');
+  return {
+    title,
+    body: _kanbanFormTrimmedValue('kanbanTaskEditBody') || null,
+    assignee: _kanbanFormTrimmedValue('kanbanTaskEditAssignee') || null,
+    tenant: _kanbanFormTrimmedValue('kanbanTaskEditTenant') || null,
+    priority: priority ?? 0,
+  };
+}
+
+async function saveKanbanTaskEdits(taskId){
+  if (!taskId) return null;
+  try {
+    const updated = await api('/api/kanban/tasks/' + encodeURIComponent(taskId) + _kanbanBoardQuery(), {
+      method: 'PATCH',
+      body: JSON.stringify(_kanbanTaskEditPayload()),
+    });
+    await loadKanban(true);
+    await loadKanbanTask((updated && updated.task && updated.task.id) || taskId);
+    showToast(t('saved') || 'Saved');
+    return updated;
+  } catch(e) {
+    showToast((t('save_failed') || 'Save failed: ') + (e.message || e), 'error');
+    return null;
+  }
+}
+
+async function linkKanbanTasks(parentId, childId){
+  const parent = String(parentId || '').trim();
+  const child = String(childId || '').trim();
+  if (!parent || !child) return null;
+  try {
+    const linked = await api('/api/kanban/links' + _kanbanBoardQuery(), {
+      method: 'POST',
+      body: JSON.stringify({parent_id: parent, child_id: child}),
+    });
+    const parentInput = document.getElementById('kanbanTaskLinkParent');
+    const childInput = document.getElementById('kanbanTaskLinkChild');
+    if (parentInput) parentInput.value = '';
+    if (childInput) childInput.value = '';
+    await loadKanban(true);
+    await loadKanbanTask(_kanbanCurrentTaskId || child || parent);
+    return linked;
+  } catch(e) {
+    showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error');
+    return null;
+  }
+}
+
+async function unlinkKanbanTasks(parentId, childId){
+  const parent = String(parentId || '').trim();
+  const child = String(childId || '').trim();
+  if (!parent || !child) return null;
+  try {
+    const unlinked = await api('/api/kanban/links/delete' + _kanbanBoardQuery(), {
+      method: 'POST',
+      body: JSON.stringify({parent_id: parent, child_id: child}),
+    });
+    await loadKanban(true);
+    await loadKanbanTask(_kanbanCurrentTaskId || child || parent);
+    return unlinked;
+  } catch(e) {
+    showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error');
+    return null;
+  }
+}
+
+async function linkKanbanParent(taskId){
+  return linkKanbanTasks(_kanbanFormTrimmedValue('kanbanTaskLinkParent'), taskId);
+}
+
+async function linkKanbanChild(taskId){
+  return linkKanbanTasks(taskId, _kanbanFormTrimmedValue('kanbanTaskLinkChild'));
+}
+
+function _kanbanLinkChip(id, removeOnclick){
+  return `<span class="kanban-link-chip"><code>${esc(id)}</code>${removeOnclick ? `<button type="button" class="btn secondary" onclick="${removeOnclick}">×</button>` : ''}</span>`;
+}
+
+function _kanbanLinkList(taskId, ids, mode){
+  if (!ids.length) return `<div class="kanban-detail-empty">${esc(t('kanban_empty'))}</div>`;
+  return `<div class="kanban-link-chip-list">${ids.map(id => {
+    const action = mode === 'parent'
+      ? `unlinkKanbanTasks('${esc(id)}','${esc(taskId)}')`
+      : `unlinkKanbanTasks('${esc(taskId)}','${esc(id)}')`;
+    return _kanbanLinkChip(id, action);
+  }).join('')}</div>`;
+}
+
+function _kanbanLinksEditorHtml(task, links){
+  const taskId = task && task.id ? task.id : '';
   const parents = (links && links.parents) || [];
   const children = (links && links.children) || [];
-  if (!parents.length && !children.length) return '';
-  const item = id => `<code>${esc(id)}</code>`;
   return `<div class="kanban-detail-links-grid">
-    <div><strong>${esc(t('kanban_parents'))}</strong><div>${parents.length ? parents.map(item).join(' ') : esc(t('kanban_empty'))}</div></div>
-    <div><strong>${esc(t('kanban_children'))}</strong><div>${children.length ? children.map(item).join(' ') : esc(t('kanban_empty'))}</div></div>
+    <div>
+      <strong>${esc(t('kanban_parents'))}</strong>
+      ${_kanbanLinkList(taskId, parents, 'parent')}
+      <div class="kanban-link-form">
+        <input id="kanbanTaskLinkParent" placeholder="Parent task ID" onkeydown="if(event.key==='Enter'){event.preventDefault();linkKanbanParent('${esc(taskId)}')}">
+        <button class="btn secondary" type="button" onclick="linkKanbanParent('${esc(taskId)}')">Add parent</button>
+      </div>
+    </div>
+    <div>
+      <strong>${esc(t('kanban_children'))}</strong>
+      ${_kanbanLinkList(taskId, children, 'child')}
+      <div class="kanban-link-form">
+        <input id="kanbanTaskLinkChild" placeholder="Child task ID" onkeydown="if(event.key==='Enter'){event.preventDefault();linkKanbanChild('${esc(taskId)}')}">
+        <button class="btn secondary" type="button" onclick="linkKanbanChild('${esc(taskId)}')">Add child</button>
+      </div>
+    </div>
   </div>`;
 }
 
+function _kanbanTaskExtraMeta(task){
+  const bits = [];
+  if (task.workspace_path) bits.push(`Workspace: ${task.workspace_path}`);
+  if (task.workspace_kind) bits.push(`Workspace kind: ${task.workspace_kind}`);
+  const skills = Array.isArray(task.skills)
+    ? task.skills
+    : (typeof task.skills === 'string' && task.skills.trim() ? _kanbanCsvValues(task.skills) : []);
+  if (skills.length) bits.push(`Skills: ${skills.join(', ')}`);
+  return bits;
+}
+
 async function createKanbanTask(){
-  const input = document.getElementById('kanbanNewTaskTitle');
-  const title = input ? input.value.trim() : '';
-  if (!title) {
+  const payload = _kanbanCreateTaskPayload();
+  if (!payload) {
     // Empty inline input (or a click on the panel-head "+" via openKanbanCreate)
     // — open the full create-task modal so the user has somewhere obvious to
     // type and configure the task. Mirrors the cron / skills pattern of routing
@@ -1820,9 +2009,9 @@ async function createKanbanTask(){
   try {
     const created = await api('/api/kanban/tasks' + _kanbanBoardQuery(), {
       method: 'POST',
-      body: JSON.stringify({title}),
+      body: JSON.stringify(payload),
     });
-    if (input) input.value = '';
+    resetKanbanCreateTaskForm();
     await loadKanban(true);
     if (created && created.task && created.task.id) await loadKanbanTask(created.task.id);
   } catch(e) { showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error'); }
@@ -2270,7 +2459,7 @@ async function submitKanbanTaskModal(){
 }
 
 async function updateKanbanTask(taskId, patch){
-  if (!taskId || !patch) return;
+  if (!taskId || !patch) return null;
   try {
     const updated = await api('/api/kanban/tasks/' + encodeURIComponent(taskId) + _kanbanBoardQuery(), {
       method: 'PATCH',
@@ -2278,7 +2467,8 @@ async function updateKanbanTask(taskId, patch){
     });
     await loadKanban(true);
     await loadKanbanTask((updated && updated.task && updated.task.id) || taskId);
-  } catch(e) { showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error'); }
+    return updated;
+  } catch(e) { showToast(t('kanban_unavailable') + ': ' + (e.message || e), 'error'); return null; }
 }
 
 async function addKanbanComment(taskId){
@@ -2298,9 +2488,8 @@ async function addKanbanComment(taskId){
 function _kanbanRenderTaskDetail(data){
   const task = data.task || {};
   const log = data.log || {};
-  const title = _kanbanTaskTitle(task);
-  const body = _kanbanTaskBody(task) || t('kanban_no_description');
   const meta = _kanbanTaskMeta(task);
+  const extraMeta = _kanbanTaskExtraMeta(task);
   const comments = data.comments || [];
   const events = data.events || [];
   const links = data.links || {};
@@ -2313,18 +2502,52 @@ function _kanbanRenderTaskDetail(data){
   const statusButtons = ['triage', 'todo', 'ready', 'blocked', 'done', 'archived'].map(status =>
     `<button class="btn secondary" onclick="updateKanbanTask('${esc(task.id)}',{status:'${status}'})">${esc(_kanbanColumnLabel(status))}</button>`
   ).join('') + `<button class="btn secondary" onclick="blockKanbanTask('${esc(task.id)}')">${esc(t('kanban_block'))}</button><button class="btn secondary" onclick="unblockKanbanTask('${esc(task.id)}')">${esc(t('kanban_unblock'))}</button>`;
+  const dispatcherButton = ['triage', 'todo', 'ready'].includes(task.status || '')
+    ? `<button class="btn secondary" type="button" onclick="nudgeKanbanDispatcher()">${esc(t('kanban_nudge_dispatcher'))}</button>`
+    : '';
   return `<div class="kanban-task-preview-header">
       <button class="btn secondary kanban-back-btn" onclick="closeKanbanTaskDetail()">${esc(t('kanban_back_to_board'))}</button>
-      <div class="kanban-task-preview-title">${esc(title)}</div>
-      <button class="btn secondary kanban-edit-btn" onclick="openKanbanEdit('${esc(task.id)}')" data-i18n="kanban_edit_task" title="${esc(t('kanban_edit_task') || 'Edit task')}">${esc(t('kanban_edit_task') || 'Edit task')}</button>
+      <div class="kanban-task-preview-title">${esc(_kanbanTaskTitle(task))}</div>
     </div>
-    <div class="kanban-task-preview-body">${esc(body)}</div>
-    ${meta.length ? `<div class="kanban-meta">${esc(meta.join(' · '))}</div>` : ''}
+    <form class="detail-form kanban-task-edit-form" onsubmit="event.preventDefault(); saveKanbanTaskEdits('${esc(task.id)}')">
+      <div class="kanban-task-preview-topline">
+        <span><code>${esc(task.id || '')}</code></span>
+        <span>${esc(_kanbanColumnLabel(task.status || 'ready'))}</span>
+        ${meta.length ? `<span>${esc(meta.join(' · '))}</span>` : ''}
+      </div>
+      <div class="detail-form-row">
+        <label for="kanbanTaskEditTitle">Title</label>
+        <input id="kanbanTaskEditTitle" type="text" value="${esc(_kanbanTaskTitle(task))}">
+      </div>
+      <div class="detail-form-row">
+        <label for="kanbanTaskEditBody">Description</label>
+        <textarea id="kanbanTaskEditBody" rows="5">${esc(_kanbanTaskBody(task))}</textarea>
+      </div>
+      <div class="kanban-task-edit-grid">
+        <div class="detail-form-row">
+          <label for="kanbanTaskEditAssignee">Assignee</label>
+          <input id="kanbanTaskEditAssignee" type="text" value="${esc(task.assignee || '')}">
+        </div>
+        <div class="detail-form-row">
+          <label for="kanbanTaskEditPriority">Priority</label>
+          <input id="kanbanTaskEditPriority" type="number" min="0" step="1" value="${esc(task.priority ?? 0)}">
+        </div>
+        <div class="detail-form-row">
+          <label for="kanbanTaskEditTenant">Tenant</label>
+          <input id="kanbanTaskEditTenant" type="text" value="${esc(task.tenant || '')}">
+        </div>
+      </div>
+      ${extraMeta.length ? `<div class="kanban-task-extra-meta">${extraMeta.map(bit => `<div>${esc(bit)}</div>`).join('')}</div>` : ''}
+      <div class="kanban-task-edit-actions">
+        ${dispatcherButton}
+        <button class="btn primary" type="submit">${esc(t('save') || 'Save')}</button>
+      </div>
+    </form>
     <div class="kanban-status-actions">${statusButtons}</div>
     <div class="kanban-detail-grid">
       ${_kanbanDetailSection('kanban-detail-comments', String(t('kanban_comments_count')).replace('{0}', comments.length), comments.map(_kanbanCommentHtml).join(''), 'kanban_no_comments')}
       ${_kanbanDetailSection('kanban-detail-events', String(t('kanban_events_count')).replace('{0}', events.length), events.map(_kanbanEventHtml).join(''), 'kanban_no_events')}
-      ${_kanbanDetailSection('kanban-detail-links', t('kanban_links'), _kanbanLinksHtml(links), 'kanban_empty')}
+      ${_kanbanDetailSection('kanban-detail-links', t('kanban_links'), _kanbanLinksEditorHtml(task, links), 'kanban_empty')}
       ${_kanbanDetailSection('kanban-detail-runs', String(t('kanban_runs_count')).replace('{0}', runs.length), runs.map(_kanbanRunHtml).join(''), 'kanban_no_runs')}
       ${_kanbanDetailSection('kanban-detail-log', t('kanban_worker_log'), log.content ? `<pre class="kanban-detail-pre">${esc(log.content)}</pre>` : '', 'kanban_empty')}
     </div>

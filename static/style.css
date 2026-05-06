@@ -3911,8 +3911,14 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 }
 .kanban-empty{padding:12px;color:var(--muted);font-size:12px;text-align:center;border:1px dashed var(--border);border-radius:8px;}
 
-.kanban-new-task-row{display:flex;gap:6px;align-items:center;}
-.kanban-new-task-row input{flex:1;min-width:0;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 8px;font:inherit;font-size:12px;}
+.kanban-new-task-row{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);}
+.kanban-new-task-row input,.kanban-new-task-row textarea,.kanban-new-task-row select{width:100%;box-sizing:border-box;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 8px;font:inherit;font-size:12px;}
+.kanban-new-task-row textarea,.kanban-task-edit-form textarea{font-family:inherit;}
+.kanban-new-task-grid,.kanban-task-edit-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+.kanban-new-task-actions,.kanban-task-edit-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;}
+.kanban-advanced-fields{width:100%;border:1px dashed var(--border);border-radius:10px;padding:10px;background:rgba(255,255,255,.02);}
+.kanban-advanced-fields summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:600;}
+.kanban-advanced-fields[open] summary{margin-bottom:10px;}
 .kanban-task-preview{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--panel);}
 .kanban-task-preview-header{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
 .kanban-back-btn{flex-shrink:0;font-size:11px;padding:4px 8px;}
@@ -3932,6 +3938,9 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
   background:color-mix(in srgb,var(--accent,#FFD700) 24%,transparent);
 }
 .kanban-task-preview-body{font-size:12px;color:var(--muted);line-height:1.45;white-space:pre-wrap;margin-bottom:6px;}
+.kanban-task-preview-topline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;font-size:11px;color:var(--muted);}
+.kanban-task-edit-form{margin:10px 0 8px;}
+.kanban-task-extra-meta{display:grid;gap:6px;margin:6px 0 10px;font-size:11px;color:var(--muted);}
 .kanban-status-actions{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
 .kanban-status-actions .btn{font-size:11px;padding:4px 8px;}
 /* Generic styled buttons used throughout the Kanban panel. The Kanban PR
@@ -4007,6 +4016,12 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
 .kanban-detail-empty{font-size:12px;color:var(--muted);}
 .kanban-detail-links-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:var(--muted);}
 .kanban-detail-links-grid code{display:inline-block;margin:4px 4px 0 0;padding:2px 5px;border-radius:5px;background:var(--input-bg);border:1px solid var(--border);color:var(--text);}
+.kanban-link-chip-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+.kanban-link-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--border);border-radius:999px;background:var(--surface);}
+.kanban-link-chip code{font-size:11px;}
+.kanban-link-chip .btn{padding:2px 6px;font-size:10px;}
+.kanban-link-form{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.kanban-link-form input{flex:1;min-width:140px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 8px;font:inherit;font-size:12px;}
 
 .kanban-stats{font-size:12px;color:var(--muted);padding:2px 0}
 .kanban-stats-grid{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
@@ -4040,6 +4055,7 @@ main.main.showing-insights > #mainInsights{display:flex;overflow-y:auto;}
   .kanban-column{min-width:82vw;scroll-snap-align:start;}
   .kanban-task-preview-header{align-items:flex-start;flex-direction:column;}
   .kanban-comment-form{flex-direction:column;align-items:stretch;}
+  .kanban-new-task-actions,.kanban-task-edit-actions,.kanban-link-form{flex-direction:column;}
   .kanban-stats-grid{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;}
   /* Multi-board: keep the switcher row tight on narrow screens, and
      widen the dropdown menu so its action labels don't truncate. */
