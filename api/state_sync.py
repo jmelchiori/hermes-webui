@@ -116,3 +116,23 @@ def sync_session_usage(session_id: str, input_tokens: int=0, output_tokens: int=
             db.close()
         except Exception:
             logger.debug("Failed to close state.db")
+
+
+def sync_session_title(session_id: str, title: str) -> None:
+    """Update only the title for an existing WebUI session in state.db."""
+    if not title:
+        return
+    db = _get_state_db()
+    if not db:
+        return
+    try:
+        db.set_session_title(session_id, title)
+    except Exception:
+        logger.debug("Failed to sync session title to state.db")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            logger.debug("Failed to close state.db")
+
+

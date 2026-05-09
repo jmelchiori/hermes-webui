@@ -378,6 +378,48 @@ class TestReasoningModelTitleGeneration(unittest.TestCase):
         self.assertFalse(mock_session.llm_title_generated)
         mock_session.save.assert_not_called()
 
+    @patch('api.streaming._aux_title_configured', return_value=True)
+    @patch('api.streaming._generate_llm_session_title_via_aux')
+    @patch('api.streaming.get_session')
+    @patch('api.state_sync.sync_session_title')
+    @patch('api.config.load_settings', return_value={'sync_to_insights': True})
+    def test_background_title_syncs_to_state_db(
+        self,
+        mock_settings,
+        mock_sync_title,
+        mock_get_session,
+        mock_aux_title,
+        mock_configured,
+    ):
+        from api.streaming import _run_background_title_update
+
+        mock_session = MagicMock()
+        mock_session.title = 'Untitled'
+        mock_session.llm_title_generated = False
+        mock_session.messages = [
+            {'role': 'user', 'content': 'What plugin capabilities does hermes-agent have?'},
+            {'role': 'assistant', 'content': 'It has tools, skills, and runtime integrations.'},
+        ]
+        mock_get_session.return_value = mock_session
+        mock_aux_title.return_value = ('Hermes Agent Plugin Capabilities', 'llm_aux', '')
+        events = []
+
+        _run_background_title_update(
+            session_id='state-sync-title-session',
+            user_text='What plugin capabilities does hermes-agent have?',
+            assistant_text='It has tools, skills, and runtime integrations.',
+            placeholder_title='Untitled',
+            put_event=lambda event_type, data: events.append((event_type, data)),
+            agent=None,
+        )
+
+        mock_settings.assert_called()
+        mock_session.save.assert_called_once_with(touch_updated_at=False)
+        mock_sync_title.assert_called_once_with(
+            'state-sync-title-session',
+            'Hermes Agent Plugin Capabilities',
+        )
+
 
 class TestBackgroundTitleProfileRouting(unittest.TestCase):
     def test_profile_env_context_logs_fail_open_resolution_errors(self):

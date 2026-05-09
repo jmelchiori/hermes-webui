@@ -1682,6 +1682,13 @@ def _run_background_title_update(session_id: str, user_text: str, assistant_text
                     s.llm_title_generated = True
                     # Keep chronological ordering stable in the sidebar.
                     s.save(touch_updated_at=False)
+                    try:
+                        from api.config import load_settings as _load_settings
+                        if _load_settings().get('sync_to_insights'):
+                            from api.state_sync import sync_session_title
+                            sync_session_title(session_id, s.title)
+                    except Exception:
+                        logger.debug("Failed to sync background title to insights")
                     effective_title = s.title
                     wrote_title = True
 
