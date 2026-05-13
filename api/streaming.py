@@ -1683,10 +1683,8 @@ def _run_background_title_update(session_id: str, user_text: str, assistant_text
                     # Keep chronological ordering stable in the sidebar.
                     s.save(touch_updated_at=False)
                     try:
-                        from api.config import load_settings as _load_settings
-                        if _load_settings().get('sync_to_insights'):
-                            from api.state_sync import sync_session_title
-                            sync_session_title(session_id, s.title)
+                        from api.state_sync import sync_session_title
+                        sync_session_title(session_id, s.title)
                     except Exception:
                         logger.debug("Failed to sync background title to insights")
                     effective_title = s.title
@@ -4551,6 +4549,14 @@ def _run_agent_streaming(
                         )
                     except Exception:
                         logger.debug("Failed to append completed turn journal event", exc_info=True)
+                # Sync title to state.db unconditionally on every turn save.
+                # The agent runtime handles token/billing directly; titles only flow here.
+                try:
+                    from api.state_sync import sync_session_title
+                    if s.title and s.title != "Untitled":
+                        sync_session_title(s.session_id, s.title)
+                except Exception:
+                    logger.debug("Failed to sync session title")
             # Sync to state.db for /insights (opt-in setting)
             try:
                 from api.config import load_settings as _load_settings

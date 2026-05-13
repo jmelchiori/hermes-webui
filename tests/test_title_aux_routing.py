@@ -382,10 +382,8 @@ class TestReasoningModelTitleGeneration(unittest.TestCase):
     @patch('api.streaming._generate_llm_session_title_via_aux')
     @patch('api.streaming.get_session')
     @patch('api.state_sync.sync_session_title')
-    @patch('api.config.load_settings', return_value={'sync_to_insights': True})
     def test_background_title_syncs_to_state_db(
         self,
-        mock_settings,
         mock_sync_title,
         mock_get_session,
         mock_aux_title,
@@ -413,7 +411,6 @@ class TestReasoningModelTitleGeneration(unittest.TestCase):
             agent=None,
         )
 
-        mock_settings.assert_called()
         mock_session.save.assert_called_once_with(touch_updated_at=False)
         mock_sync_title.assert_called_once_with(
             'state-sync-title-session',

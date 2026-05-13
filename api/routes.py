@@ -8077,6 +8077,14 @@ def _handle_chat_sync(handler, body):
         if s.title == "Untitled":
             s.title = title_from(s.messages, s.title)
         s.save()
+        # Sync title to state.db unconditionally — the agent runtime handles
+        # token/billing persistence directly, but titles only flow through here.
+        try:
+            from api.state_sync import sync_session_title
+            if s.title and s.title != "Untitled":
+                sync_session_title(s.session_id, s.title)
+        except Exception:
+            logger.debug("Failed to sync session title")
     # Sync to state.db for /insights (opt-in setting)
     try:
         if load_settings().get("sync_to_insights"):
