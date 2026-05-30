@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP `list_sessions` now coerces quoted/string boolean flags for `detail` and `unassigned` instead of treating any non-empty string as truthy. This keeps compact listings compact when callers send values like `"false"`, and the published tool schema now advertises both boolean and string forms for those flags.
+
 ## [v0.51.85] — 2026-05-17 — Release BI (stage-378 — 3-PR batch — workspace-prefix display leakage fix + release-tag update banner + Slice 3a cancel-control gate RFC)
 
 ### Fixed

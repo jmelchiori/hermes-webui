@@ -85,6 +85,39 @@ def _active_profile() -> str:
     return get_active_profile_name() or 'default'
 
 
+def _strip_matching_quotes(value: str) -> str:
+    """Repeatedly unwrap matching quote pairs around scalar string values."""
+    normalized = value.strip()
+    while len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in {'"', "'"}:
+        updated = normalized[1:-1].strip()
+        if updated == normalized:
+            break
+        normalized = updated
+    return normalized
+
+
+def _coerce_bool_flag(value, *, default: bool = False) -> bool:
+    """Normalize bool-like MCP arguments.
+
+    Some MCP clients and tests pass scalar flags as strings (for example
+    "true", 'false', or nested quoted forms). Without normalization, Python
+    treats any non-empty string as truthy, which breaks flags like detail=False.
+    Unknown string values fall back to the caller-provided default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = _strip_matching_quotes(value).lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+        return default
+    return bool(value)
+
+
 def _validate_color(color: str | None) -> str | None:
     """Return an error string if color is invalid, else None."""
     if color is not None and not re.match(r"^#[0-9a-fA-F]{3,8}$", color):
@@ -241,9 +274,9 @@ async def handle_list_sessions(arguments: dict) -> list[TextContent]:
     Without detail (default), only the compact index row is returned.
     """
     project_id = arguments.get("project_id")
-    unassigned = arguments.get("unassigned", False)
+    unassigned = _coerce_bool_flag(arguments.get("unassigned"), default=False)
     limit = max(1, min(500, arguments.get("limit", 50)))
-    detail = arguments.get("detail", False)
+    detail = _coerce_bool_flag(arguments.get("detail"), default=False)
     active = _active_profile()
 
     index = _load_index()
@@ -554,9 +587,21 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Filter sessions by project ID"},
-                "unassigned": {"type": "boolean", "description": "Show only sessions with no project"},
+                "unassigned": {
+                    "anyOf": [
+                        {"type": "boolean"},
+                        {"type": "string"},
+                    ],
+                    "description": "Show only sessions with no project",
+                },
                 "limit": {"type": "integer", "description": "Max results (default: 50, max: 500)"},
-                "detail": {"type": "boolean", "description": "Include full message history for each session (default: false)"},
+                "detail": {
+                    "anyOf": [
+                        {"type": "boolean"},
+                        {"type": "string"},
+                    ],
+                    "description": "Include full message history for each session (default: false)",
+                },
             },
             "required": [],
         },
