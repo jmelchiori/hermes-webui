@@ -117,6 +117,18 @@ def _session_compact(row: dict) -> dict:
     }
 
 
+def _session_full(row: dict, session_path: Path | None = None) -> dict:
+    """Full session representation including messages if available."""
+    result = dict(row)
+    if session_path and session_path.exists():
+        try:
+            data = json.loads(session_path.read_text(encoding="utf-8"))
+            result["messages"] = data.get("messages", [])
+        except Exception:
+            result["messages"] = []
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  Helpers — HTTP API (for mutations that need cache sync)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -223,10 +235,15 @@ async def handle_list_projects(_arguments: dict) -> list[TextContent]:
 
 
 async def handle_list_sessions(arguments: dict) -> list[TextContent]:
-    """List sessions, optionally filtered by project or unassigned status."""
+    """List sessions, optionally filtered by project or unassigned status.
+
+    Pass detail=True to include the full message history of each session.
+    Without detail (default), only the compact index row is returned.
+    """
     project_id = arguments.get("project_id")
     unassigned = arguments.get("unassigned", False)
     limit = max(1, min(500, arguments.get("limit", 50)))
+    detail = arguments.get("detail", False)
     active = _active_profile()
 
     index = _load_index()
@@ -242,6 +259,19 @@ async def handle_list_sessions(arguments: dict) -> list[TextContent]:
         sessions = [s for s in sessions if s["project_id"] == project_id]
 
     sessions = sessions[:limit]
+
+    # If detail=True, load message history for each session.
+    if detail and sessions and SESSION_DIR.exists():
+        detailed = []
+        for s in sessions:
+            sid = s.get("session_id")
+            if sid:
+                session_path = SESSION_DIR / f"{sid}.json"
+                detailed.append(_session_full(s, session_path))
+            else:
+                detailed.append(s)
+        sessions = detailed
+
     return [TextContent(type="text", text=json.dumps(sessions, ensure_ascii=False, indent=2))]
 
 
@@ -519,13 +549,14 @@ TOOLS = [
     ),
     Tool(
         name="list_sessions",
-        description="List sessions, optionally filtered by project or unassigned status (profile-scoped).",
+        description="List sessions, optionally filtered by project or unassigned status (profile-scoped). Pass detail=True to include full message history.",
         inputSchema={
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "description": "Filter sessions by project ID"},
                 "unassigned": {"type": "boolean", "description": "Show only sessions with no project"},
                 "limit": {"type": "integer", "description": "Max results (default: 50, max: 500)"},
+                "detail": {"type": "boolean", "description": "Include full message history for each session (default: false)"},
             },
             "required": [],
         },

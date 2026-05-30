@@ -550,6 +550,77 @@ class TestListSessions:
         result = await _call(self.mod, "list_sessions", unassigned=True)
         assert isinstance(result, list)
 
+    async def test_list_with_detail_false_excludes_messages(self):
+        """Without detail (default), sessions must NOT include messages."""
+        # Seed a session with message history
+        import api.config as _cfg_mod
+        SESSION_DIR = _cfg_mod.SESSION_DIR
+        sid = "detail_test_001"
+        session_path = SESSION_DIR / f"{sid}.json"
+        session_payload = {
+            "session_id": sid,
+            "title": "Detail Test",
+            "project_id": None,
+            "messages": [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there"},
+            ],
+        }
+        session_path.write_text(json.dumps(session_payload), encoding="utf-8")
+        # Add to index
+        index = _cfg_mod.SESSION_INDEX_FILE
+        index.write_text(
+            json.dumps([{
+                "session_id": sid,
+                "title": "Detail Test",
+                "project_id": None,
+                "profile": "default",
+            }]),
+            encoding="utf-8")
+
+        # Default call (no detail arg)
+        result = await _call(self.mod, "list_sessions")
+        assert len(result) == 1
+        assert "messages" not in result[0], \
+            f"compact mode should not include messages: {result[0].keys()}"
+
+        # Explicit detail=False
+        result = await _call(self.mod, "list_sessions", detail=False)
+        assert len(result) == 1
+        assert "messages" not in result[0]
+
+    async def test_list_with_detail_true_includes_messages(self):
+        """With detail=True, sessions include full message history."""
+        import api.config as _cfg_mod
+        SESSION_DIR = _cfg_mod.SESSION_DIR
+        sid = "detail_test_002"
+        session_path = SESSION_DIR / f"{sid}.json"
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there"},
+        ]
+        session_payload = {
+            "session_id": sid,
+            "title": "Detail Test 2",
+            "project_id": None,
+            "messages": messages,
+        }
+        session_path.write_text(json.dumps(session_payload), encoding="utf-8")
+        index = _cfg_mod.SESSION_INDEX_FILE
+        index.write_text(
+            json.dumps([{
+                "session_id": sid,
+                "title": "Detail Test 2",
+                "project_id": None,
+                "profile": "default",
+            }]),
+            encoding="utf-8")
+
+        result = await _call(self.mod, "list_sessions", detail=True)
+        assert len(result) == 1
+        assert "messages" in result[0], "detail=True should include messages"
+        assert result[0]["messages"] == messages
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Session mutations (HTTP API — basic validation only)
